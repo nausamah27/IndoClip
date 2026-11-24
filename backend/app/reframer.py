@@ -10,9 +10,18 @@ from app.utils import FFMPEG_CMD, run_subprocess
 
 logger = logging.getLogger("indoclip.reframer")
 
-# Initialize MediaPipe solutions
-mp_face_detection = mp.solutions.face_detection
-mp_face_mesh = mp.solutions.face_mesh
+# Initialize MediaPipe solutions safely across versions (legacy vs Tasks API)
+try:
+    if hasattr(mp, "solutions"):
+        mp_face_detection = mp.solutions.face_detection
+        mp_face_mesh = mp.solutions.face_mesh
+    else:
+        from mediapipe.python.solutions import face_detection as mp_face_detection
+        from mediapipe.python.solutions import face_mesh as mp_face_mesh
+except Exception as e:
+    logger.warning(f"MediaPipe solutions API tidak tersedia ({e}). Menggunakan fallback center crop.")
+    mp_face_detection = None
+    mp_face_mesh = None
 
 class VideoReframer:
     """
@@ -57,6 +66,16 @@ class VideoReframer:
         orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
+        if mp_face_detection is None:
+            return {
+                "detected_mode": "SOLO",
+                "center_x_ratio": 0.5,
+                "multi_speaker": False,
+                "face_count": 1,
+                "speakers": [],
+                "active_speaker_intervals": []
+            }
+
         face_detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
         
         sampled_data = []
@@ -180,7 +199,7 @@ class VideoReframer:
         # Face Mesh & Detector untuk mode PODCAST active speaker
         face_mesh = None
         face_detector = None
-        if resolved_category == "PODCAST":
+        if resolved_category == "PODCAST" and mp_face_mesh and mp_face_detection:
             face_mesh = mp_face_mesh.FaceMesh(max_num_faces=4, refine_landmarks=True, min_detection_confidence=0.5)
             face_detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
             
@@ -274,7 +293,7 @@ class VideoReframer:
                     
             else:
                 # Mode SOLO: Dynamic face tracking dengan EMA smoothing
-                if read_frames % self.sample_interval == 0:
+                if mp_face_detection and read_frames % self.sample_interval == 0:
                     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     face_detector_solo = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
                     results = face_detector_solo.process(rgb_frame)
