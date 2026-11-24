@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js Build Output
+.next/
+out/
+build/
+dist/
+
+# Python Cache & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# IndoClip Temporary & Output Media Files
+backend/temp/
+backend/outputs/
+temp/
+outputs/
+*.mp4
+*.m4a
+*.wav
+*.ass
+*.jpg
+*.png
+*.zip
+*.exe
+
+
+# Secrets & Environment Variables (Keep .env.example)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+
+# OS Files
+.DS_Store
+Thumbs.db

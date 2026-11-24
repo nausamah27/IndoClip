@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 245, 245, 247;
+  --background-start-rgb: 11, 13, 19;
+  --background-end-rgb: 15, 18, 27;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: radial-gradient(circle at 50% 0%, #171C2B 0%, #0B0D13 70%);
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0B0D13;
+}
+::-webkit-scrollbar-thumb {
+  background: #1E2538;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FA8072;
+}
+
+/* Glassmorphism Classes */
+.glass-panel {
+  background: rgba(18, 22, 34, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(250, 128, 114, 0.12);
+}
+
+.glass-card {
+  background: rgba(18, 22, 34, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-card:hover {
+  border-color: rgba(250, 128, 114, 0.35);
+}
+
+/* Salmon Gradients */
+.salmon-gradient {
+  background: linear-gradient(135deg, #FA8072 0%, #F05845 100%);
+}
+
+.salmon-text-gradient {
+  background: linear-gradient(135deg, #FA8072 0%, #FFB6AD 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
