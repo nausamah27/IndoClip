@@ -5,13 +5,17 @@ import logging
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
 
-import mediapipe as mp
 from app.utils import FFMPEG_CMD, run_subprocess
 
 logger = logging.getLogger("indoclip.reframer")
 
-# Initialize MediaPipe solutions safely across versions (legacy vs Tasks API)
+# Safe import for MediaPipe with OpenCV Haar Cascade fallback (for 100% Python 3.13+ compatibility)
+mp = None
+mp_face_detection = None
+mp_face_mesh = None
+
 try:
+    import mediapipe as mp
     if hasattr(mp, "solutions"):
         mp_face_detection = mp.solutions.face_detection
         mp_face_mesh = mp.solutions.face_mesh
@@ -19,9 +23,20 @@ try:
         from mediapipe.python.solutions import face_detection as mp_face_detection
         from mediapipe.python.solutions import face_mesh as mp_face_mesh
 except Exception as e:
-    logger.warning(f"MediaPipe solutions API tidak tersedia ({e}). Menggunakan fallback center crop.")
+    logger.warning(f"MediaPipe tidak dimuat ({e}). Menggunakan OpenCV Haar Cascade built-in.")
+    mp = None
     mp_face_detection = None
     mp_face_mesh = None
+
+# Built-in OpenCV Haar Cascade fallback for face detection (zero extra dependency)
+cv2_face_cascade = None
+try:
+    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    cv2_face_cascade = cv2.CascadeClassifier(cascade_path)
+    if cv2_face_cascade.empty():
+        cv2_face_cascade = None
+except Exception:
+    cv2_face_cascade = None
 
 class VideoReframer:
     """
@@ -66,7 +81,7 @@ class VideoReframer:
         orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
-        if mp_face_detection is None:
+        if mp_face_detection is None and cv2_face_cascade is None:
             return {
                 "detected_mode": "SOLO",
                 "center_x_ratio": 0.5,
@@ -76,7 +91,7 @@ class VideoReframer:
                 "active_speaker_intervals": []
             }
 
-        face_detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+        face_detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5) if mp_face_detection else None
         
         sampled_data = []
         frame_idx = 0
@@ -87,23 +102,33 @@ class VideoReframer:
                 break
                 
             if frame_idx % self.sample_interval == 0:
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = face_detector.process(rgb_frame)
-                
                 faces = []
-                if results and results.detections:
-                    for det in results.detections:
-                        bbox = det.location_data.relative_bounding_box
-                        xmin = int(bbox.xmin * orig_w)
-                        ymin = int(bbox.ymin * orig_h)
-                        w = int(bbox.width * orig_w)
-                        h = int(bbox.height * orig_h)
-                        area_ratio = (w * h) / (orig_w * orig_h + 1e-6)
-                        cx = xmin + w // 2
-                        cy = ymin + h // 2
+                if face_detector:
+                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    results = face_detector.process(rgb_frame)
+                    if results and results.detections:
+                        for det in results.detections:
+                            bbox = det.location_data.relative_bounding_box
+                            xmin = int(bbox.xmin * orig_w)
+                            ymin = int(bbox.ymin * orig_h)
+                            w = int(bbox.width * orig_w)
+                            h = int(bbox.height * orig_h)
+                            area_ratio = (w * h) / (orig_w * orig_h + 1e-6)
+                            cx = xmin + w // 2
+                            cy = ymin + h // 2
+                            faces.append({
+                                "bbox": (xmin, ymin, w, h),
+                                "center": (cx, cy),
+                                "area_ratio": area_ratio
+                            })
+                elif cv2_face_cascade:
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    dets = cv2_face_cascade.detectMultiScale(gray, 1.2, 4, minSize=(60, 60))
+                    for (fx, fy, fw, fh) in dets:
+                        area_ratio = (fw * fh) / (orig_w * orig_h + 1e-6)
                         faces.append({
-                            "bbox": (xmin, ymin, w, h),
-                            "center": (cx, cy),
+                            "bbox": (int(fx), int(fy), int(fw), int(fh)),
+                            "center": (int(fx + fw // 2), int(fy + fh // 2)),
                             "area_ratio": area_ratio
                         })
                 sampled_data.append({"frame_idx": frame_idx, "faces": faces})
@@ -111,7 +136,8 @@ class VideoReframer:
             frame_idx += 1
             
         cap.release()
-        face_detector.close()
+        if face_detector:
+            face_detector.close()
         
         return {
             "fps": fps,
@@ -293,20 +319,27 @@ class VideoReframer:
                     
             else:
                 # Mode SOLO: Dynamic face tracking dengan EMA smoothing
-                if mp_face_detection and read_frames % self.sample_interval == 0:
-                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    face_detector_solo = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
-                    results = face_detector_solo.process(rgb_frame)
-                    if results and results.detections:
-                        largest_area = 0
-                        for det in results.detections:
-                            bbox = det.location_data.relative_bounding_box
-                            bw = int(bbox.width * orig_w)
-                            bh = int(bbox.height * orig_h)
-                            if bw * bh > largest_area:
-                                largest_area = bw * bh
-                                smooth_cx = ema_alpha * (int(bbox.xmin * orig_w) + bw // 2) + (1 - ema_alpha) * smooth_cx
-                    face_detector_solo.close()
+                if read_frames % self.sample_interval == 0:
+                    if mp_face_detection:
+                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        face_detector_solo = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+                        results = face_detector_solo.process(rgb_frame)
+                        if results and results.detections:
+                            largest_area = 0
+                            for det in results.detections:
+                                bbox = det.location_data.relative_bounding_box
+                                bw = int(bbox.width * orig_w)
+                                bh = int(bbox.height * orig_h)
+                                if bw * bh > largest_area:
+                                    largest_area = bw * bh
+                                    smooth_cx = ema_alpha * (int(bbox.xmin * orig_w) + bw // 2) + (1 - ema_alpha) * smooth_cx
+                            face_detector_solo.close()
+                    elif cv2_face_cascade:
+                        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                        dets = cv2_face_cascade.detectMultiScale(gray, 1.2, 4, minSize=(60, 60))
+                        if len(dets) > 0:
+                            largest = max(dets, key=lambda d: d[2] * d[3])
+                            smooth_cx = ema_alpha * (largest[0] + largest[2] // 2) + (1 - ema_alpha) * smooth_cx
                     
                 x_start = int(max(0, min(orig_w - crop_w, smooth_cx - crop_w / 2)))
                 crop_region = frame[0:orig_h, x_start : x_start + crop_w]
