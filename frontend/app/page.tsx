@@ -7,7 +7,7 @@ import { PipelineTracker } from '../components/PipelineTracker';
 import { ClipCard } from '../components/ClipCard';
 import { LayoutMode, SubtitleColor, ClipResultItem, PipelineProgressEvent } from '../types';
 import { Sparkles, CheckCircle2 } from 'lucide-react';
-import { API_BASE } from '../utils/api';
+import { getApiBase } from '../utils/api';
 
 export default function Home() {
   const [apiKey, setApiKey] = useState('');
@@ -34,7 +34,7 @@ export default function Home() {
     const savedJobId = localStorage.getItem('CURRENT_JOB_ID');
     if (savedJobId) {
       // Cek apakah job tersebut masih berjalan atau sudah selesai
-      fetch(`${API_BASE}/api/jobs/${savedJobId}`)
+      fetch(`${getApiBase()}/api/jobs/${savedJobId}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((jobData) => {
           if (jobData && (jobData.status === 'PROCESSING' || jobData.status === 'COMPLETED')) {
@@ -72,10 +72,12 @@ export default function Home() {
     if (pollingRef.current) clearInterval(pollingRef.current);
     if (eventSourceRef.current) eventSourceRef.current.close();
 
+    const apiBase = getApiBase();
+
     // 1. Dual-Channel: Polling Fallback setiap 1.5 detik (100% tahan buffer proxy)
     pollingRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/jobs/${jobId}`);
+        const res = await fetch(`${getApiBase()}/api/jobs/${jobId}`);
         if (!res.ok) {
           if (res.status === 404) {
             setIsProcessing(false);
@@ -111,9 +113,9 @@ export default function Home() {
       }
     }, 1500);
 
-    // 2. Real-Time Server-Sent Events (SSE) langsung ke 127.0.0.1:8000
+    // 2. Real-Time Server-Sent Events (SSE)
     try {
-      const eventSource = new EventSource(`${API_BASE}/api/progress/${jobId}`);
+      const eventSource = new EventSource(`${apiBase}/api/progress/${jobId}`);
       eventSourceRef.current = eventSource;
 
       eventSource.onmessage = (event) => {
@@ -140,7 +142,7 @@ export default function Home() {
             if (pollingRef.current) clearInterval(pollingRef.current);
             eventSource.close();
 
-            fetch(`${API_BASE}/api/jobs/${jobId}`)
+            fetch(`${getApiBase()}/api/jobs/${jobId}`)
               .then((r) => r.json())
               .then((jobData) => {
                 setClips(jobData.clips || []);
@@ -185,7 +187,8 @@ export default function Home() {
     setVideoTitle('');
 
     try {
-      const response = await fetch(`${API_BASE}/api/process`, {
+      const apiBase = getApiBase();
+      const response = await fetch(`${apiBase}/api/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -212,7 +215,14 @@ export default function Home() {
     } catch (err: any) {
       setIsProcessing(false);
       setIsError(true);
-      setErrorMessage(err.message || 'Gagal terhubung ke server backend.');
+      const apiBase = getApiBase();
+      if (err.name === 'TypeError' || err.message === 'Failed to fetch') {
+        setErrorMessage(
+          `Gagal terhubung ke backend (${apiBase}). Pastikan sel Colab sedang berjalan dan URL Cloudflare (.trycloudflare.com) sudah dimasukkan lewat tombol 'Backend' di pojok kanan atas.`
+        );
+      } else {
+        setErrorMessage(err.message || 'Gagal terhubung ke server backend.');
+      }
     }
   };
 
