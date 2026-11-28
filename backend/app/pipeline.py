@@ -154,7 +154,7 @@ async def run_pipeline_orchestrator(job_id: str, request: ProcessRequest):
             stage="CURATION_START",
             stage_number=3,
             progress=45,
-            message="Tahap 3/6: AI Gemini mengurasi momen viral, scoring, & copywriting Shorts..."
+            message="Tahap 3/6: AI mengurasi momen viral & hook judul (Auto-Fallback: Gemini / Mistral / Groq)..."
         )
         
         try:
@@ -165,13 +165,15 @@ async def run_pipeline_orchestrator(job_id: str, request: ProcessRequest):
                     transcript_data,
                     peaks,
                     request.gemini_api_key,
+                    request.mistral_api_key,
+                    request.groq_api_key,
                     request.min_clip_duration,
                     request.max_clip_duration
                 ),
-                timeout=35.0  # Timeout maksimal 35 detik agar tidak pernah macet/stuck
+                timeout=75.0  # Timeout fleksibel untuk multi-provider fallback
             )
         except asyncio.TimeoutError:
-            logger.warning("Kurasi Gemini timeout (>35s). Mengaktifkan fallback heuristik audio peaks instan...")
+            logger.warning("Kurasi AI timeout (>75s). Mengaktifkan fallback heuristik audio peaks instan...")
             curation_result = fallback_heuristic_curation(
                 transcript_data,
                 peaks,
@@ -188,7 +190,7 @@ async def run_pipeline_orchestrator(job_id: str, request: ProcessRequest):
             stage="CURATION_DONE",
             stage_number=3,
             progress=55,
-            message=f"Tahap 3/6 Selesai: {len(curated_clips)} klip viral terbaik berhasil dipilih Gemini!",
+            message=f"Tahap 3/6 Selesai: {len(curated_clips)} klip viral kualitas tinggi (skor >= 75) berhasil dikurasi!",
             data={"clips_found": len(curated_clips)}
         )
 

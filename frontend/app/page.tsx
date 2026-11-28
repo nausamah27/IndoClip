@@ -193,7 +193,9 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           youtube_url: params.youtubeUrl,
-          gemini_api_key: apiKey || undefined,
+          gemini_api_key: apiKey || localStorage.getItem('GEMINI_API_KEY') || undefined,
+          mistral_api_key: localStorage.getItem('MISTRAL_API_KEY') || undefined,
+          groq_api_key: localStorage.getItem('GROQ_API_KEY') || undefined,
           layout_mode: params.layoutMode,
           subtitle_color: params.subtitleColor,
           language: 'id',

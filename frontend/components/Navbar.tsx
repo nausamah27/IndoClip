@@ -14,6 +14,8 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [showServerModal, setShowServerModal] = useState(false);
   const [inputKey, setInputKey] = useState(apiKey);
+  const [inputMistralKey, setInputMistralKey] = useState('');
+  const [inputGroqKey, setInputGroqKey] = useState('');
   const [currentBackendUrl, setCurrentBackendUrl] = useState('');
   const [inputBackendUrl, setInputBackendUrl] = useState('');
   const [isTestingServer, setIsTestingServer] = useState(false);
@@ -24,6 +26,9 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
     cuda_device?: string;
     compute_type?: string;
     default_whisper_model?: string;
+    gemini_api_configured?: boolean;
+    mistral_api_configured?: boolean;
+    groq_api_configured?: boolean;
   } | null>(null);
 
   const checkHealth = (url?: string) => {
@@ -45,11 +50,18 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
     setCurrentBackendUrl(base);
     setInputBackendUrl(base);
     checkHealth(base);
+    
+    const savedMistral = localStorage.getItem('MISTRAL_API_KEY') || '';
+    const savedGroq = localStorage.getItem('GROQ_API_KEY') || '';
+    setInputMistralKey(savedMistral);
+    setInputGroqKey(savedGroq);
   }, []);
 
   const handleSaveKey = () => {
     setApiKey(inputKey);
     localStorage.setItem('GEMINI_API_KEY', inputKey);
+    localStorage.setItem('MISTRAL_API_KEY', inputMistralKey);
+    localStorage.setItem('GROQ_API_KEY', inputGroqKey);
     setShowKeyModal(false);
   };
 
@@ -251,42 +263,61 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
       {/* Modal Setup API Key */}
       {showKeyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-dark-card border border-dark-border rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in">
+          <div className="bg-dark-card border border-dark-border rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
             <div className="flex items-center space-x-3 mb-4">
               <div className="p-2 rounded-lg bg-salmon/15 text-salmon">
                 <Sparkles className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">Google Gemini API Key</h3>
+                <h3 className="text-lg font-bold text-white">Pengaturan API Key AI (Opsional)</h3>
                 <p className="text-xs text-gray-400">
-                  Digunakan untuk kurasi momen viral & copywriting bahasa gaul.
+                  Backend sudah otomatis memiliki API key bawaan & Auto-Fallback multi-provider.
                 </p>
               </div>
+            </div>
+
+            <div className="p-3 bg-salmon/10 border border-salmon/20 rounded-xl text-xs text-gray-300 mb-4 leading-relaxed">
+              💡 <strong>Catatan:</strong> Jika Anda mengosongkan form di bawah, sistem otomatis memakai API Key yang tertanam di environment backend (Kaggle/Colab) dengan urutan: <strong>Gemini 2.5 Flash</strong> → <strong>Mistral Small</strong> → <strong>GroqCloud (Llama 3.3 70B)</strong>.
             </div>
 
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-300 mb-1">
-                  API Key (gemini-3.8-flash)
+                  1. Google Gemini API Key (Prioritas 1)
                 </label>
                 <input
                   type="password"
                   value={inputKey}
                   onChange={(e) => setInputKey(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full px-3.5 py-2.5 bg-dark-input border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-salmon"
+                  placeholder="AIzaSy... (Opsional)"
+                  className="w-full px-3.5 py-2.5 bg-dark-input border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-salmon font-mono"
                 />
-                <p className="text-[11px] text-gray-400 mt-1.5">
-                  Tersimpan secara lokal di browser Anda. Dapatkan gratis di{' '}
-                  <a
-                    href="https://aistudio.google.com"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-salmon hover:underline font-medium"
-                  >
-                    Google AI Studio
-                  </a>.
-                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">
+                  2. Mistral AI API Key (Cadangan 1)
+                </label>
+                <input
+                  type="password"
+                  value={inputMistralKey}
+                  onChange={(e) => setInputMistralKey(e.target.value)}
+                  placeholder="mis_... (Opsional)"
+                  className="w-full px-3.5 py-2.5 bg-dark-input border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-salmon font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-300 mb-1">
+                  3. GroqCloud API Key (Cadangan 2)
+                </label>
+                <input
+                  type="password"
+                  value={inputGroqKey}
+                  onChange={(e) => setInputGroqKey(e.target.value)}
+                  placeholder="gsk_... (Opsional)"
+                  className="w-full px-3.5 py-2.5 bg-dark-input border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-salmon font-mono"
+                />
               </div>
 
               <div className="flex justify-end space-x-2 pt-2">
@@ -294,13 +325,13 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
                   onClick={() => setShowKeyModal(false)}
                   className="px-4 py-2 text-xs font-medium text-gray-400 hover:text-white rounded-lg transition"
                 >
-                  Batal
+                  Tutup
                 </button>
                 <button
                   onClick={handleSaveKey}
-                  className="px-5 py-2 text-xs font-semibold text-white salmon-gradient rounded-lg shadow-md hover:opacity-90 transition"
+                  className="px-5 py-2 text-xs font-semibold text-white salmon-gradient rounded-xl shadow-md hover:opacity-90 transition"
                 >
-                  Simpan Key
+                  Simpan Pengaturan
                 </button>
               </div>
             </div>

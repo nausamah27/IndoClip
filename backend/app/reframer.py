@@ -38,6 +38,38 @@ try:
 except Exception:
     cv2_face_cascade = None
 
+# Cache ketersediaan akselerasi GPU NVIDIA NVENC
+_HAS_NVENC = None
+
+def is_nvenc_available() -> bool:
+    global _HAS_NVENC
+    if _HAS_NVENC is not None:
+        return _HAS_NVENC
+    try:
+        import subprocess
+        test_cmd = [
+            FFMPEG_CMD, "-v", "quiet",
+            "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.05",
+            "-c:v", "h264_nvenc",
+            "-f", "null", "-"
+        ]
+        res = subprocess.run(test_cmd, capture_output=True)
+        _HAS_NVENC = (res.returncode == 0)
+    except Exception:
+        _HAS_NVENC = False
+    logger.info(f"NVIDIA NVENC hardware encoding available: {_HAS_NVENC}")
+    return _HAS_NVENC
+
+def apply_deadzone_ema(target_x: float, current_smooth: float, alpha: float = 0.15, deadzone: float = 12.0) -> float:
+    """
+    Exponential Moving Average (alpha=0.15) dengan Deadzone Threshold (12px)
+    untuk menghilangkan kamera goyang/bergetar (jitter) pada crop 9:16.
+    """
+    diff = target_x - current_smooth
+    if abs(diff) < deadzone:
+        return current_smooth
+    return current_smooth + alpha * diff
+
 class VideoReframer:
     """
     Tahap 5: Smart Multi-Mode Reframing (reframer.py)
@@ -207,14 +239,17 @@ class VideoReframer:
         
         orig_w = analysis.get("orig_w", 1920)
         orig_h = analysis.get("orig_h", 1080)
-        fps = float(analysis.get("fps", 30.0))
         
-        # Hitung crop horizontal untuk aspek 9:16 dari tinggi video
-        crop_w = int(orig_h * (9.0 / 16.0))
-        if crop_w % 2 != 0:
-            crop_w -= 1
-            
         cap = cv2.VideoCapture(str(raw_video_path))
+        # Gunakan FPS persis sama dengan video sumber untuk video halus tanpa patah-patah
+        source_fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        fps = source_fps if source_fps > 0.0 else float(analysis.get("fps", 30.0))
+        
+        # Pastikan dimensi selalu genap (even numbers) untuk kompatibilitas encoder H.264
+        self.target_w = self.target_w - (self.target_w % 2)
+        self.target_h = self.target_h - (self.target_h % 2)
+        crop_w = int(orig_h * (9.0 / 16.0))
+        crop_w = crop_w - (crop_w % 2)
         
         # Hitung frame padding
         start_frame = int(relative_start * fps)
@@ -331,14 +366,15 @@ class VideoReframer:
                         
                         final_canvas = np.vstack([top_screen, bottom_screen])
                     else:
-                        smooth_cx = ema_alpha * current_speaker_cx + (1 - ema_alpha) * smooth_cx
+                        smooth_cx = apply_deadzone_ema(current_speaker_cx, smooth_cx, alpha=0.15, deadzone=12.0)
                         x_start = int(max(0, min(orig_w - crop_w, smooth_cx - crop_w / 2)))
                         crop_region = frame[0:orig_h, x_start : x_start + crop_w]
                         final_canvas = cv2.resize(crop_region, (self.target_w, self.target_h))
                         
                 else:
-                    # Mode SOLO: Dynamic face tracking dengan EMA smoothing
+                    # Mode SOLO: Dynamic face tracking dengan EMA (alpha=0.15) & Deadzone (12px)
                     if is_sample_frame:
+                        target_cx = smooth_cx
                         if face_detector_solo:
                             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                             results = face_detector_solo.process(rgb_frame)
@@ -350,13 +386,15 @@ class VideoReframer:
                                     bh = int(bbox.height * orig_h)
                                     if bw * bh > largest_area:
                                         largest_area = bw * bh
-                                        smooth_cx = ema_alpha * (int(bbox.xmin * orig_w) + bw // 2) + (1 - ema_alpha) * smooth_cx
+                                        target_cx = int(bbox.xmin * orig_w) + bw // 2
                         elif cv2_face_cascade:
                             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                             dets = cv2_face_cascade.detectMultiScale(gray, 1.2, 4, minSize=(60, 60))
                             if len(dets) > 0:
                                 largest = max(dets, key=lambda d: d[2] * d[3])
-                                smooth_cx = ema_alpha * (largest[0] + largest[2] // 2) + (1 - ema_alpha) * smooth_cx
+                                target_cx = largest[0] + largest[2] // 2
+                                
+                        smooth_cx = apply_deadzone_ema(target_cx, smooth_cx, alpha=0.15, deadzone=12.0)
                         
                     x_start = int(max(0, min(orig_w - crop_w, smooth_cx - crop_w / 2)))
                     crop_region = frame[0:orig_h, x_start : x_start + crop_w]
@@ -381,8 +419,8 @@ class VideoReframer:
         if read_frames == 0 or not temp_video_only.exists() or temp_video_only.stat().st_size == 0:
             raise RuntimeError(f"Gagal memproses frame: {temp_video_only.name} kosong (0 frames terbaca dari {raw_video_path.name}).")
             
-        # Merge kembali audio menggunakan FFmpeg
-        logger.info(f"Muxing audio into reframed video {output_path.name}...")
+        # Merge audio dengan re-encode H.264 bersih (h264_nvenc / libx264, pix_fmt yuv420p, vsync cfr)
+        logger.info(f"Muxing & re-encoding audio ke reframed video {output_path.name}...")
         
         # Cari trek audio master dari Tahap 1 jika ada
         job_dir = output_path.parent
@@ -393,6 +431,10 @@ class VideoReframer:
         audio_src = str(master_audio) if use_master_audio else str(raw_video_path)
         audio_seek = f"{clip_start_time:.2f}" if use_master_audio else f"{relative_start:.2f}"
         
+        # Pilih encoder hardware NVENC jika tersedia di Kaggle GPU T4
+        has_nv = is_nvenc_available()
+        video_enc_args = ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "22"] if has_nv else ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "22"]
+        
         mux_cmd = [
             FFMPEG_CMD,
             "-y",
@@ -400,7 +442,9 @@ class VideoReframer:
             "-ss", audio_seek,
             "-t", f"{duration:.2f}",
             "-i", audio_src,
-            "-c:v", "copy",
+            *video_enc_args,
+            "-pix_fmt", "yuv420p",
+            "-vsync", "cfr",
             "-c:a", "aac",
             "-b:a", "192k",
             "-map", "0:v:0",
@@ -412,24 +456,30 @@ class VideoReframer:
         try:
             run_subprocess(mux_cmd)
         except Exception as e:
-            logger.warning(f"Muxing stream copy gagal ({e}). Fallback ke re-encode ultrafast...")
-            fallback_cmd = [
-                FFMPEG_CMD,
-                "-y",
-                "-i", str(temp_video_only),
-                "-ss", audio_seek,
-                "-t", f"{duration:.2f}",
-                "-i", audio_src,
-                "-c:v", "libx264",
-                "-preset", "ultrafast",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-map", "0:v:0",
-                "-map", "1:a:0?",
-                "-shortest",
-                str(output_path)
-            ]
-            run_subprocess(fallback_cmd)
+            if has_nv:
+                logger.warning(f"NVENC muxing gagal ({e}). Fallback ke CPU libx264 ultrafast...")
+                fallback_cmd = [
+                    FFMPEG_CMD,
+                    "-y",
+                    "-i", str(temp_video_only),
+                    "-ss", audio_seek,
+                    "-t", f"{duration:.2f}",
+                    "-i", audio_src,
+                    "-c:v", "libx264",
+                    "-preset", "ultrafast",
+                    "-crf", "22",
+                    "-pix_fmt", "yuv420p",
+                    "-vsync", "cfr",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-map", "0:v:0",
+                    "-map", "1:a:0?",
+                    "-shortest",
+                    str(output_path)
+                ]
+                run_subprocess(fallback_cmd)
+            else:
+                raise e
         
         # Hapus temporary video
         if temp_video_only.exists():

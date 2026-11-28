@@ -10,6 +10,7 @@ import yt_dlp
 
 from app.utils import FFMPEG_CMD, run_subprocess
 from app.models import AudioPeak
+from app.config import settings
 
 logger = logging.getLogger("indoclip.audio")
 
@@ -34,6 +35,10 @@ def download_audio_track(youtube_url: str, output_dir: Path, job_id: str) -> Tup
             'preferredcodec': 'm4a',
         }] if not audio_template.endswith(".m4a") else []
     }
+    
+    if settings.COOKIES_FILE.exists():
+        ydl_opts['cookiefile'] = str(settings.COOKIES_FILE)
+        logger.info(f"Menggunakan cookies.txt: {settings.COOKIES_FILE}")
     
     logger.info(f"Downloading best audio track for {youtube_url}...")
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:

@@ -6,6 +6,7 @@ import yt_dlp
 
 from app.models import CuratedClip
 from app.utils import FFMPEG_CMD, run_subprocess
+from app.config import settings
 
 logger = logging.getLogger("indoclip.downloader")
 
@@ -49,6 +50,9 @@ def download_partial_video(
         'buffersize': 1024 * 1024
     }
     
+    if settings.COOKIES_FILE.exists():
+        ydl_opts['cookiefile'] = str(settings.COOKIES_FILE)
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([youtube_url])
@@ -64,9 +68,11 @@ def download_partial_video(
             "--merge-output-format", "mp4",
             "-o", str(raw_video_path),
             "--no-playlist",
-            "--force-overwrites",
-            youtube_url
+            "--force-overwrites"
         ]
+        if settings.COOKIES_FILE.exists():
+            cmd.extend(["--cookies", str(settings.COOKIES_FILE)])
+        cmd.append(youtube_url)
         run_subprocess(cmd)
         
     if not raw_video_path.exists() or raw_video_path.stat().st_size == 0:

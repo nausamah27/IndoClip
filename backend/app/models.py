@@ -19,11 +19,13 @@ class AudioPeak(BaseModel):
 class CuratedClip(BaseModel):
     title: str = Field(description="Judul deskriptif dan clickbait positif khas kreator Indonesia")
     hook_banner: str = Field(description="Teks pancingan maksimal 5 kata HURUF KAPITAL untuk 3 detik pertama")
+    hook_text: Optional[str] = Field(default=None, description="Kalimat pembuka hook 0-3 detik")
     virality_score: int = Field(description="Skor total viralitas konten (1-100)")
     score_breakdown: ViralityBreakdown = Field(description="Rincian skor hook, alur cerita, dan potensi interaksi")
-    category: str = Field(description="Kategori klip: 'PODCAST', 'GAMING', atau 'SOLO'")
+    category: str = Field(description="Kategori klip: 'Hot Take', 'Storytelling', 'Tips Daging', atau 'Komedi/Emosi'")
+    reason: Optional[str] = Field(default=None, description="Alasan kurasi momen viral")
     start_time: float = Field(description="Detik mulai klip (tepat pada jeda napas, jangan potong kata)")
-    end_time: float = Field(description="Detik selesai klip (durasi ideal 30-65 detik)")
+    end_time: float = Field(description="Detik selesai klip (durasi ideal 28-58 detik)")
     corrected_words: List[WordTiming] = Field(description="Kata-kata dengan perbaikan ejaan slang/gaul Indonesia tanpa mengubah timestamp")
     social_caption: str = Field(description="Caption siap posting dan hashtag viral TikTok/Shorts")
 
@@ -32,12 +34,14 @@ class CurationResponse(BaseModel):
 
 class ProcessRequest(BaseModel):
     youtube_url: str = Field(description="URL video YouTube yang ingin diproses")
-    gemini_api_key: Optional[str] = Field(default=None, description="API Key Google Gemini")
+    gemini_api_key: Optional[str] = Field(default=None, description="API Key Google Gemini (opsional)")
+    mistral_api_key: Optional[str] = Field(default=None, description="API Key Mistral AI (opsional)")
+    groq_api_key: Optional[str] = Field(default=None, description="API Key GroqCloud (opsional)")
     layout_mode: str = Field(default="AUTO", description="Mode layout: 'AUTO', 'PODCAST', 'GAMING', 'SOLO'")
     subtitle_color: str = Field(default="OPUS_GREEN", description="Warna highlight subtitle: 'OPUS_GREEN', 'SALMON_PINK', 'CYBER_YELLOW'")
     language: str = Field(default="id", description="Bahasa transkripsi ('id' atau 'auto')")
-    min_clip_duration: int = Field(default=30, description="Durasi minimal klip dalam detik")
-    max_clip_duration: int = Field(default=65, description="Durasi maksimal klip dalam detik")
+    min_clip_duration: int = Field(default=28, description="Durasi minimal klip dalam detik (default: 28)")
+    max_clip_duration: int = Field(default=58, description="Durasi maksimal klip dalam detik (default: 58)")
 
 class ReRenderSubtitleRequest(BaseModel):
     job_id: str

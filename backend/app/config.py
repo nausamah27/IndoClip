@@ -20,6 +20,9 @@ class Settings:
     TEMP_DIR: Path = Path(os.getenv("TEMP_DIR", str(BASE_DIR / "temp"))).resolve()
     OUTPUT_DIR: Path = Path(os.getenv("OUTPUT_DIR", str(BASE_DIR / "outputs"))).resolve()
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    MISTRAL_API_KEY: str = os.getenv("MISTRAL_API_KEY", "")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    COOKIES_FILE: Path = BASE_DIR / "cookies.txt"
     HOST: str = os.getenv("HOST", "127.0.0.1")
     PORT: int = int(os.getenv("PORT", "8000"))
     

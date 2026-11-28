@@ -65,17 +65,35 @@ async def health_check():
         "default_whisper_model": default_model,
         "whisper_cpu_threads": settings.WHISPER_CPU_THREADS,
         "whisper_beam_size": settings.WHISPER_BEAM_SIZE,
-        "gemini_api_configured": bool(settings.GEMINI_API_KEY)
+        "gemini_api_configured": bool(os.getenv("GEMINI_API_KEY") or settings.GEMINI_API_KEY),
+        "mistral_api_configured": bool(os.getenv("MISTRAL_API_KEY") or settings.MISTRAL_API_KEY),
+        "groq_api_configured": bool(os.getenv("GROQ_API_KEY") or settings.GROQ_API_KEY),
+        "cookies_configured": settings.COOKIES_FILE.exists()
     }
 
 @app.post("/api/process")
 async def start_process_pipeline(request: ProcessRequest, background_tasks: BackgroundTasks):
     """
     Memulai pipeline video clipping 6 tahap di background.
-    Mengembalikan job_id yang dapat dimonitor via SSE /api/progress/{job_id}.
+    API Key Gemini, Mistral, dan Groq otomatis di-resolve dari environment jika tidak dikirim frontend.
     """
     if not request.youtube_url or "http" not in request.youtube_url:
         raise HTTPException(status_code=400, detail="URL YouTube tidak valid.")
+        
+    # Auto-resolve API keys dari environment backend jika kosong di frontend
+    gemini_key = (request.gemini_api_key or "").strip() or os.getenv("GEMINI_API_KEY", "").strip() or settings.GEMINI_API_KEY
+    mistral_key = (request.mistral_api_key or "").strip() or os.getenv("MISTRAL_API_KEY", "").strip() or settings.MISTRAL_API_KEY
+    groq_key = (request.groq_api_key or "").strip() or os.getenv("GROQ_API_KEY", "").strip() or settings.GROQ_API_KEY
+    
+    if not gemini_key and not mistral_key and not groq_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Semua API key (Gemini, Mistral, Groq) kosong. Harap isi salah satu API key di form pengaturan atau environment variable backend."
+        )
+        
+    request.gemini_api_key = gemini_key or None
+    request.mistral_api_key = mistral_key or None
+    request.groq_api_key = groq_key or None
         
     job_id = f"job_{uuid.uuid4().hex[:8]}"
     
