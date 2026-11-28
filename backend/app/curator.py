@@ -109,7 +109,7 @@ def curate_viral_clips(
 ) -> CurationResponse:
     """
     Tahap 3: Kurasi Viral & Copywriting ala Kreator Indo menggunakan google-genai
-    dengan model gemini-2.5-flash dan Structured Outputs (Pydantic).
+    dengan model gemini-3.8-flash dan Structured Outputs (Pydantic).
     """
     effective_api_key = api_key or settings.GEMINI_API_KEY
     
@@ -149,7 +149,7 @@ def curate_viral_clips(
         
         logger.info("Calling Gemini 2.5 Flash via google-genai SDK for viral clip curation...")
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=json.dumps(prompt_payload, ensure_ascii=False),
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
