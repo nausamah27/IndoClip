@@ -32,6 +32,7 @@ def start_server_with_ngrok():
     # 1. Pastikan library pyngrok terpasang
     try:
         from pyngrok import ngrok, conf
+        from pyngrok.installer import install_ngrok, get_ngrok_bin
     except ImportError:
         logger.error("Library 'pyngrok' belum terinstall! Silakan jalankan: pip install pyngrok")
         sys.exit(1)
@@ -42,40 +43,64 @@ def start_server_with_ngrok():
             ngrok.set_auth_token(NGROK_AUTHTOKEN)
             logger.info("Ngrok authtoken berhasil dikonfigurasi.")
         except Exception as auth_err:
-            logger.info(f"Authtoken sudah terdaftar sebelumnya di sistem: {auth_err}")
+            logger.info(f"Authtoken sudah terdaftar di sistem: {auth_err}")
     else:
         logger.warning(
             "⚠️ NGROK_AUTHTOKEN belum diisi! Jika Anda mendapatkan error autentikasi, "
-            "silakan isi variabel NGROK_AUTHTOKEN di atas file ini atau via export NGROK_AUTHTOKEN='token_anda'."
+            "silakan isi variabel NGROK_AUTHTOKEN."
         )
 
-    # 3. Hentikan tunnel lama jika ada
+    # 3. Hentikan tunnel lokal lama jika ada
     try:
         tunnels = ngrok.get_tunnels()
         for t in tunnels:
-            logger.info(f"Menutup tunnel lama: {t.public_url}")
+            logger.info(f"Menutup tunnel lokal: {t.public_url}")
             ngrok.disconnect(t.public_url)
     except Exception:
         pass
 
     # 4. Hubungkan ke domain statis Ngrok
     logger.info(f"Menghubungkan tunnel ke domain statis: {NGROK_DOMAIN} (Port {PORT})...")
+    public_url = f"https://{NGROK_DOMAIN}"
+    tunnel_connected = False
+
+    # Coba metode 1: pyngrok options url (ngrok v3)
     try:
-        tunnel = ngrok.connect(PORT, domain=NGROK_DOMAIN)
+        tunnel = ngrok.connect(PORT, "http", url=public_url)
         public_url = tunnel.public_url
-        if public_url.startswith("http://"):
-            public_url = public_url.replace("http://", "https://")
-    except Exception as e:
-        logger.warning(f"Gagal menghubungkan dengan opsi 'domain={NGROK_DOMAIN}': {e}")
-        logger.info("Mencoba opsi fallback 'hostname'...")
+        tunnel_connected = True
+    except Exception as e1:
+        if "ERR_NGROK_334" in str(e1):
+            logger.error("\n" + "!" * 70)
+            logger.error("🚨 PERINGATAN: ENDPOINT NGROK SEDANG DIGUNAKAN DI TEMPAT LAIN!")
+            logger.error(f"Domain '{NGROK_DOMAIN}' masih aktif di sesi Google Colab Anda sebelumnya.")
+            logger.error("Solusi: Hentikan runtime Google Colab lama Anda, atau tutup di https://dashboard.ngrok.com/endpoints")
+            logger.error("!" * 70 + "\n")
+            raise e1
+
+        # Coba metode 2: domain / hostname fallback
         try:
-            tunnel = ngrok.connect(PORT, hostname=NGROK_DOMAIN)
+            tunnel = ngrok.connect(PORT, "http", domain=NGROK_DOMAIN)
             public_url = tunnel.public_url
+            tunnel_connected = True
         except Exception as e2:
-            logger.error(f"❌ Gagal menghubungkan ke domain statis Ngrok: {e2}")
-            logger.info("Membuka tunnel dinamis acak sebagai alternatif...")
-            tunnel = ngrok.connect(PORT)
-            public_url = tunnel.public_url
+            if "ERR_NGROK_334" in str(e2):
+                logger.error("🚨 Sesi lama masih aktif di Colab. Tutup sesi Colab terlebih dahulu!")
+                raise e2
+            # Coba metode 3: subprocess CLI langsung
+            logger.info("Mencoba menghubungkan via ngrok CLI langsung...")
+            try:
+                ngrok_bin = get_ngrok_bin()
+                proc = subprocess.Popen(
+                    [ngrok_bin, "http", str(PORT), f"--url={public_url}"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                time.sleep(2)
+                tunnel_connected = True
+            except Exception as e3:
+                logger.error(f"Koneksi tunnel gagal: {e3}")
+                raise e3
 
     print("\n" + "=" * 65)
     print("🚀 INDOCLIP PRO BACKEND BERHASIL TERHUBUNG KE NGROK!")
@@ -93,8 +118,11 @@ def start_server_with_ngrok():
     except KeyboardInterrupt:
         print("\nMenghentikan server dan menutup tunnel Ngrok...")
     finally:
-        ngrok.disconnect(public_url)
-        ngrok.kill()
+        try:
+            ngrok.disconnect(public_url)
+            ngrok.kill()
+        except Exception:
+            pass
         print("✅ Server dan tunnel Ngrok berhasil ditutup.")
 
 if __name__ == "__main__":
