@@ -27,6 +27,8 @@ def download_audio_track(youtube_url: str, output_dir: Path, job_id: str) -> Tup
         'noplaylist': True,
         'quiet': False,
         'no_warnings': True,
+        'concurrent_fragment_downloads': 5,
+        'buffersize': 1024 * 1024,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'm4a',

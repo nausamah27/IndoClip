@@ -44,7 +44,9 @@ def download_partial_video(
         'noplaylist': True,
         'quiet': False,
         'no_warnings': True,
-        'overwrites': True
+        'overwrites': True,
+        'concurrent_fragment_downloads': 5,
+        'buffersize': 1024 * 1024
     }
     
     try:

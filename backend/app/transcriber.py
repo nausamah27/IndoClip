@@ -37,12 +37,15 @@ from app.config import settings
 
 logger = logging.getLogger("indoclip.transcriber")
 
+# Global model cache to avoid re-initializing weights on every job
+_CACHED_WHISPER_MODEL = None
+_CACHED_MODEL_PARAMS = None
+
 def detect_device_and_compute_type() -> Tuple[str, str, str]:
     """
     Cek konfigurasi perangkat & tipe komputasi.
-    Dioptimalkan khusus untuk CPU Intel Core i7-8665U:
-    default model="small", device="cpu", compute_type="int8".
-    Jika GPU CUDA terdeteksi, otomatis switch ke GPU.
+    Jika GPU CUDA terdeteksi (seperti di Kaggle/Colab), otomatis gunakan GPU float16.
+    Model default 'small' sangat cepat (~10 detik untuk 10 menit audio) dan akurat.
     """
     cuda_available = False
     
@@ -66,9 +69,38 @@ def detect_device_and_compute_type() -> Tuple[str, str, str]:
         cuda_available = False
         
     if cuda_available:
-        return "cuda", "float16", "medium"
+        model_name = os.getenv("WHISPER_MODEL", "small")
+        return "cuda", "float16", model_name
     else:
         return settings.WHISPER_DEVICE, settings.WHISPER_COMPUTE_TYPE, settings.WHISPER_MODEL
+
+def get_or_create_whisper_model(device: str, compute_type: str, model_name: str, cpu_threads: int):
+    """Reuse cached model instance if parameters match."""
+    global _CACHED_WHISPER_MODEL, _CACHED_MODEL_PARAMS
+    from faster_whisper import WhisperModel
+    
+    param_key = (device, compute_type, model_name, cpu_threads)
+    if _CACHED_WHISPER_MODEL is not None and _CACHED_MODEL_PARAMS == param_key:
+        logger.info(f"Reusing cached WhisperModel ({model_name} on {device})")
+        return _CACHED_WHISPER_MODEL
+        
+    logger.info(f"Loading faster-whisper model='{model_name}', device='{device}', compute_type='{compute_type}', threads={cpu_threads}")
+    try:
+        model = WhisperModel(model_name, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
+    except Exception as init_err:
+        if device == "cuda":
+            logger.warning(f"CUDA faster-whisper init failed ({init_err}), falling back to CPU (small, int8)...")
+            device = "cpu"
+            compute_type = "int8"
+            model_name = "small"
+            model = WhisperModel(model_name, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
+            param_key = (device, compute_type, model_name, cpu_threads)
+        else:
+            raise init_err
+            
+    _CACHED_WHISPER_MODEL = model
+    _CACHED_MODEL_PARAMS = param_key
+    return model
 
 def transcribe_audio(
     audio_path: Path,
@@ -79,25 +111,12 @@ def transcribe_audio(
     """
     Tahap 2: Transkripsi Akurat Bahasa Indonesia menggunakan faster-whisper.
     Menggunakan word_timestamps=True, vad_filter=True, dan beam_size=1 (greedy)
-    dengan 6 cpu_threads pada Intel Core i7-8665U (4C/8T).
+    untuk kecepatan maksimal.
     """
-    from faster_whisper import WhisperModel
-
     device, compute_type, default_model = detect_device_and_compute_type()
-    cpu_threads = settings.WHISPER_CPU_THREADS  # 6 threads (sisa 2 thread untuk OS/Browser agar lancar)
-    logger.info(f"Initializing faster-whisper with model='{default_model}', device='{device}', compute_type='{compute_type}', threads={cpu_threads}")
+    cpu_threads = settings.WHISPER_CPU_THREADS
     
-    try:
-        model = WhisperModel(default_model, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
-    except Exception as init_err:
-        if device == "cuda":
-            logger.warning(f"CUDA faster-whisper init failed ({init_err}), falling back to CPU (small, int8)...")
-            device = "cpu"
-            compute_type = "int8"
-            default_model = "small"
-            model = WhisperModel(default_model, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
-        else:
-            raise init_err
+    model = get_or_create_whisper_model(device, compute_type, default_model, cpu_threads)
     
     logger.info(f"Transcribing audio {audio_path.name} (language={language}, beam_size={settings.WHISPER_BEAM_SIZE}, vad_filter=True)...")
     segments_generator, info = model.transcribe(

@@ -30,14 +30,14 @@ class Settings:
     except Exception:
         CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
-    # Optimasi Khusus CPU Laptop Intel Core i7-8665U (4C / 8T)
+    # Optimasi Kecepatan Eksekusi (GPU Kaggle & Multi-Core CPU)
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "small")
     WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "cpu")
     WHISPER_COMPUTE_TYPE: str = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
-    WHISPER_CPU_THREADS: int = int(os.getenv("WHISPER_CPU_THREADS", "6"))
+    WHISPER_CPU_THREADS: int = int(os.getenv("WHISPER_CPU_THREADS", "4"))
     WHISPER_BEAM_SIZE: int = int(os.getenv("WHISPER_BEAM_SIZE", "1"))
-    FFMPEG_THREADS: int = int(os.getenv("FFMPEG_THREADS", "4"))
-    FFMPEG_PRESET: str = os.getenv("FFMPEG_PRESET", "veryfast")
+    FFMPEG_THREADS: int = int(os.getenv("FFMPEG_THREADS", "0"))  # 0 = gunakan semua thread CPU yang tersedia
+    FFMPEG_PRESET: str = os.getenv("FFMPEG_PRESET", "ultrafast")  # ultrafast = render instan tanpa jeda
 
     def __init__(self):
         self.TEMP_DIR.mkdir(parents=True, exist_ok=True)
