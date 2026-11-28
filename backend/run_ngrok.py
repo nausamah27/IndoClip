@@ -36,10 +36,13 @@ def start_server_with_ngrok():
         logger.error("Library 'pyngrok' belum terinstall! Silakan jalankan: pip install pyngrok")
         sys.exit(1)
 
-    # 2. Atur Authtoken Ngrok
+    # 2. Atur Authtoken Ngrok (Aman dari error 'Authtoken already set')
     if NGROK_AUTHTOKEN and NGROK_AUTHTOKEN != "MASUKKAN_AUTHTOKEN_NGROK_ANDA_DI_SINI":
-        ngrok.set_auth_token(NGROK_AUTHTOKEN)
-        logger.info("Ngrok authtoken berhasil dikonfigurasi.")
+        try:
+            ngrok.set_auth_token(NGROK_AUTHTOKEN)
+            logger.info("Ngrok authtoken berhasil dikonfigurasi.")
+        except Exception as auth_err:
+            logger.info(f"Authtoken sudah terdaftar sebelumnya di sistem: {auth_err}")
     else:
         logger.warning(
             "⚠️ NGROK_AUTHTOKEN belum diisi! Jika Anda mendapatkan error autentikasi, "
