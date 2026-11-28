@@ -18,7 +18,7 @@ from app.models import (
 )
 from app.audio_analyzer import analyze_audio_stage
 from app.transcriber import transcribe_audio
-from app.curator import curate_viral_clips
+from app.curator import curate_viral_clips, fallback_heuristic_curation
 from app.downloader import download_partial_video
 from app.reframer import reframer
 from app.renderer import render_final_clip, rerender_clip_subtitles_only
@@ -154,18 +154,30 @@ async def run_pipeline_orchestrator(job_id: str, request: ProcessRequest):
             stage="CURATION_START",
             stage_number=3,
             progress=45,
-            message="Tahap 3/6: Gemini 2.5 Flash mengurasi momen viral, scoring, & copywriting Shorts..."
+            message="Tahap 3/6: AI Gemini mengurasi momen viral, scoring, & copywriting Shorts..."
         )
         
-        curation_result = await loop.run_in_executor(
-            None,
-            curate_viral_clips,
-            transcript_data,
-            peaks,
-            request.gemini_api_key,
-            request.min_clip_duration,
-            request.max_clip_duration
-        )
+        try:
+            curation_result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    curate_viral_clips,
+                    transcript_data,
+                    peaks,
+                    request.gemini_api_key,
+                    request.min_clip_duration,
+                    request.max_clip_duration
+                ),
+                timeout=35.0  # Timeout maksimal 35 detik agar tidak pernah macet/stuck
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Kurasi Gemini timeout (>35s). Mengaktifkan fallback heuristik audio peaks instan...")
+            curation_result = fallback_heuristic_curation(
+                transcript_data,
+                peaks,
+                request.min_clip_duration,
+                request.max_clip_duration
+            )
         
         curated_clips = curation_result.clips
         if not curated_clips:
