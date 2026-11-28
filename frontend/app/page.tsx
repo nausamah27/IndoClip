@@ -115,7 +115,8 @@ export default function Home() {
 
     // 2. Real-Time Server-Sent Events (SSE)
     try {
-      const eventSource = new EventSource(`${apiBase}/api/progress/${jobId}`);
+      const sseUrl = `${apiBase}/api/progress/${jobId}?ngrok-skip-browser-warning=true`;
+      const eventSource = new EventSource(sseUrl);
       eventSourceRef.current = eventSource;
 
       eventSource.onmessage = (event) => {

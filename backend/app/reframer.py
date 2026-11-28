@@ -76,19 +76,21 @@ class VideoReframer:
         Sampling frame video untuk mendeteksi jumlah wajah, posisi, dan pola gerak.
         """
         cap = cv2.VideoCapture(str(video_path))
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+        orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920)
+        orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if orig_w <= 0: orig_w = 1920
+        if orig_h <= 0: orig_h = 1080
         
         if mp_face_detection is None and cv2_face_cascade is None:
+            cap.release()
             return {
-                "detected_mode": "SOLO",
-                "center_x_ratio": 0.5,
-                "multi_speaker": False,
-                "face_count": 1,
-                "speakers": [],
-                "active_speaker_intervals": []
+                "fps": fps,
+                "orig_w": orig_w,
+                "orig_h": orig_h,
+                "total_frames": total_frames,
+                "sampled_data": []
             }
 
         face_detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5) if mp_face_detection else None
@@ -151,9 +153,9 @@ class VideoReframer:
         """
         Mendeteksi otomatis apakah video berupa GAMING, PODCAST, atau SOLO.
         """
-        sampled_data = analysis["sampled_data"]
-        orig_w = analysis["orig_w"]
-        orig_h = analysis["orig_h"]
+        sampled_data = analysis.get("sampled_data", [])
+        orig_w = analysis.get("orig_w", 1920)
+        orig_h = analysis.get("orig_h", 1080)
         
         if not sampled_data:
             return "SOLO"
@@ -201,9 +203,9 @@ class VideoReframer:
             
         logger.info(f"Reframing {raw_video_path.name} using category mode: {resolved_category}")
         
-        orig_w = analysis["orig_w"]
-        orig_h = analysis["orig_h"]
-        fps = analysis["fps"]
+        orig_w = analysis.get("orig_w", 1920)
+        orig_h = analysis.get("orig_h", 1080)
+        fps = float(analysis.get("fps", 30.0))
         
         # Hitung crop horizontal untuk aspek 9:16 dari tinggi video
         crop_w = int(orig_h * (9.0 / 16.0))
