@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Flame,
   Download,
@@ -12,11 +12,12 @@ import {
   Volume2,
   VolumeX,
   Share2,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { ClipResultItem } from '../types';
 import { SubtitleEditorModal } from './SubtitleEditorModal';
-import { getFullMediaUrl } from '../utils/api';
+import { getFullMediaUrl, fetchBlobWithNgrokBypass } from '../utils/api';
 
 interface ClipCardProps {
   clip: ClipResultItem;
@@ -29,7 +30,50 @@ export const ClipCard: React.FC<ClipCardProps> = ({ clip, jobId, onClipUpdated }
   const [isMuted, setIsMuted] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
   const [copiedCaption, setCopiedCaption] = useState(false);
+  const [videoBlobUrl, setVideoBlobUrl] = useState<string>('');
+  const [posterBlobUrl, setPosterBlobUrl] = useState<string>('');
+  const [isLoadingMedia, setIsLoadingMedia] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Ambil video dan poster sebagai Blob dengan header ngrok-skip-browser-warning
+  // agar tidak terhalang interstitial screen Ngrok gratis di browser / HP
+  useEffect(() => {
+    let isMounted = true;
+    let createdVideoUrl = '';
+    let createdPosterUrl = '';
+
+    const loadMediaBlobs = async () => {
+      setIsLoadingMedia(true);
+      try {
+        if (clip.video_url) {
+          createdVideoUrl = await fetchBlobWithNgrokBypass(clip.video_url);
+          if (isMounted) setVideoBlobUrl(createdVideoUrl);
+        }
+      } catch (e) {
+        console.warn('Gagal memuat video blob, menggunakan direct URL fallback:', e);
+      }
+
+      try {
+        if (clip.thumbnail_url) {
+          createdPosterUrl = await fetchBlobWithNgrokBypass(clip.thumbnail_url);
+          if (isMounted) setPosterBlobUrl(createdPosterUrl);
+        }
+      } catch (e) {
+        console.warn('Gagal memuat poster blob, menggunakan direct URL fallback:', e);
+      } finally {
+        if (isMounted) setIsLoadingMedia(false);
+      }
+    };
+
+    loadMediaBlobs();
+
+    return () => {
+      isMounted = false;
+      if (createdVideoUrl) URL.revokeObjectURL(createdVideoUrl);
+      if (createdPosterUrl) URL.revokeObjectURL(createdPosterUrl);
+    };
+  }, [clip.video_url, clip.thumbnail_url]);
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -55,6 +99,31 @@ export const ClipCard: React.FC<ClipCardProps> = ({ clip, jobId, onClipUpdated }
     setTimeout(() => setCopiedCaption(false), 2500);
   };
 
+  const handleDownload = async () => {
+    try {
+      setIsDownloading(true);
+      let blobUrl = videoBlobUrl;
+      if (!blobUrl && clip.video_url) {
+        blobUrl = await fetchBlobWithNgrokBypass(clip.video_url);
+      }
+      if (blobUrl) {
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = `${clip.clip_id}.mp4`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        window.open(getFullMediaUrl(clip.video_url), '_blank');
+      }
+    } catch (e) {
+      console.error('Download via blob gagal, membuka URL langsung:', e);
+      window.open(getFullMediaUrl(clip.video_url), '_blank');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const getViralityColor = (score: number) => {
     if (score >= 90) return 'text-salmon border-salmon bg-salmon/10';
     if (score >= 80) return 'text-green-400 border-green-500 bg-green-500/10';
@@ -66,10 +135,17 @@ export const ClipCard: React.FC<ClipCardProps> = ({ clip, jobId, onClipUpdated }
       {/* 9:16 Vertical Video Preview Player */}
       <div className="w-full md:w-[280px] flex-shrink-0 flex flex-col items-center">
         <div className="relative aspect-[9/16] w-full max-w-[280px] bg-black rounded-2xl overflow-hidden shadow-2xl border border-dark-border group">
+          {isLoadingMedia && !videoBlobUrl && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm space-y-2">
+              <Loader2 className="w-7 h-7 text-salmon animate-spin" />
+              <span className="text-[11px] text-gray-300 font-medium">Memuat Video...</span>
+            </div>
+          )}
+
           <video
             ref={videoRef}
-            src={getFullMediaUrl(clip.video_url)}
-            poster={getFullMediaUrl(clip.thumbnail_url)}
+            src={videoBlobUrl || getFullMediaUrl(clip.video_url)}
+            poster={posterBlobUrl || getFullMediaUrl(clip.thumbnail_url)}
             playsInline
             loop
             onPlay={() => setIsPlaying(true)}
@@ -92,6 +168,7 @@ export const ClipCard: React.FC<ClipCardProps> = ({ clip, jobId, onClipUpdated }
             <button
               onClick={togglePlay}
               className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition"
+              title={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </button>
@@ -101,6 +178,7 @@ export const ClipCard: React.FC<ClipCardProps> = ({ clip, jobId, onClipUpdated }
             <button
               onClick={toggleMute}
               className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition"
+              title={isMuted ? 'Unmute' : 'Mute'}
             >
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
@@ -197,17 +275,19 @@ export const ClipCard: React.FC<ClipCardProps> = ({ clip, jobId, onClipUpdated }
             <span>{copiedCaption ? 'Tersalin!' : 'Copy Caption & Hashtag'}</span>
           </button>
 
-          {/* Download Final MP4 Button */}
-          <a
-            href={getFullMediaUrl(clip.video_url)}
-            download={`${clip.clip_id}.mp4`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-xl salmon-gradient text-xs font-bold text-white shadow-md shadow-salmon/20 hover:opacity-95 transition ml-auto"
+          {/* Download Final MP4 Button via Blob Bypass */}
+          <button
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className="flex items-center space-x-2 px-5 py-2.5 rounded-xl salmon-gradient text-xs font-bold text-white shadow-md shadow-salmon/20 hover:opacity-95 transition ml-auto disabled:opacity-50"
           >
-            <Download className="w-4 h-4" />
-            <span>Download MP4</span>
-          </a>
+            {isDownloading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            <span>{isDownloading ? 'Mengunduh...' : 'Download MP4'}</span>
+          </button>
         </div>
       </div>
 

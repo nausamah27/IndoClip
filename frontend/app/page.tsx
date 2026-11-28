@@ -7,7 +7,7 @@ import { PipelineTracker } from '../components/PipelineTracker';
 import { ClipCard } from '../components/ClipCard';
 import { LayoutMode, SubtitleColor, ClipResultItem, PipelineProgressEvent } from '../types';
 import { Sparkles, CheckCircle2 } from 'lucide-react';
-import { getApiBase } from '../utils/api';
+import { getApiBase, apiFetch, DEFAULT_API_URL } from '../utils/api';
 
 export default function Home() {
   const [apiKey, setApiKey] = useState('');
@@ -34,7 +34,7 @@ export default function Home() {
     const savedJobId = localStorage.getItem('CURRENT_JOB_ID');
     if (savedJobId) {
       // Cek apakah job tersebut masih berjalan atau sudah selesai
-      fetch(`${getApiBase()}/api/jobs/${savedJobId}`)
+      apiFetch(`/api/jobs/${savedJobId}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((jobData) => {
           if (jobData && (jobData.status === 'PROCESSING' || jobData.status === 'COMPLETED')) {
@@ -74,10 +74,10 @@ export default function Home() {
 
     const apiBase = getApiBase();
 
-    // 1. Dual-Channel: Polling Fallback setiap 1.5 detik (100% tahan buffer proxy)
+    // 1. Dual-Channel: Polling Fallback setiap 1.5 detik (100% tahan buffer proxy Ngrok)
     pollingRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`${getApiBase()}/api/jobs/${jobId}`);
+        const res = await apiFetch(`/api/jobs/${jobId}`);
         if (!res.ok) {
           if (res.status === 404) {
             setIsProcessing(false);
@@ -142,7 +142,7 @@ export default function Home() {
             if (pollingRef.current) clearInterval(pollingRef.current);
             eventSource.close();
 
-            fetch(`${getApiBase()}/api/jobs/${jobId}`)
+            apiFetch(`/api/jobs/${jobId}`)
               .then((r) => r.json())
               .then((jobData) => {
                 setClips(jobData.clips || []);
@@ -187,8 +187,7 @@ export default function Home() {
     setVideoTitle('');
 
     try {
-      const apiBase = getApiBase();
-      const response = await fetch(`${apiBase}/api/process`, {
+      const response = await apiFetch('/api/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -218,7 +217,7 @@ export default function Home() {
       const apiBase = getApiBase();
       if (err.name === 'TypeError' || err.message === 'Failed to fetch') {
         setErrorMessage(
-          `Gagal terhubung ke backend (${apiBase}). Pastikan sel Colab sedang berjalan dan URL Cloudflare (.trycloudflare.com) sudah dimasukkan lewat tombol 'Backend' di pojok kanan atas.`
+          `Gagal terhubung ke backend (${apiBase}). Pastikan server backend / Ngrok di Colab sedang aktif.`
         );
       } else {
         setErrorMessage(err.message || 'Gagal terhubung ke server backend.');
@@ -252,7 +251,7 @@ export default function Home() {
           </h1>
 
           <p className="mt-5 text-base sm:text-lg text-gray-400 max-w-2xl mx-auto leading-relaxed">
-            Otomatis deteksi tawa & klimaks audio, transkripsi gaul Bahasa Indonesia, kurasi hook Gemini 2.5 Flash, dan reframing cerdas MediaPipe. 0 Budget di localhost.
+            Otomatis deteksi tawa & klimaks audio, transkripsi gaul Bahasa Indonesia, kurasi hook Gemini 3.8 Flash, dan reframing cerdas MediaPipe. Otomatis terhubung ke backend.
           </p>
 
           {/* Quick Stats Badges */}
@@ -267,7 +266,7 @@ export default function Home() {
             </div>
             <div className="flex items-center space-x-2">
               <span className="w-2 h-2 rounded-full bg-purple-400" />
-              <span>Gemini 2.5 Flash Scoring</span>
+              <span>Gemini 3.8 Flash Scoring</span>
             </div>
             <div className="flex items-center space-x-2">
               <span className="w-2 h-2 rounded-full bg-blue-400" />
@@ -276,7 +275,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Control Panel */}
+        {/* Control Panel (Langsung input YouTube URL tanpa form backend yang mengganggu) */}
         <ControlPanel
           onStartProcess={handleStartProcess}
           isProcessing={isProcessing}
@@ -340,7 +339,7 @@ export default function Home() {
             <span>•</span>
             <span>Local 0 Budget OpusClip for Indonesian Content Creators</span>
           </div>
-          <p>© 2026 IndoClip Pro. Built for Windows localhost with Next.js, FastAPI & FFmpeg.</p>
+          <p>© 2026 IndoClip Pro. Built with Next.js, FastAPI & FFmpeg.</p>
         </div>
       </footer>
     </div>

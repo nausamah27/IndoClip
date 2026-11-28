@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Flame, Cpu, Key, CheckCircle, AlertCircle, Settings2, Sparkles, Server, Globe, ExternalLink, RefreshCw } from 'lucide-react';
-import { getApiBase } from '../utils/api';
+import { getApiBase, apiFetch, DEFAULT_API_URL } from '../utils/api';
 
 interface NavbarProps {
   apiKey: string;
@@ -28,7 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
 
   const checkHealth = (url?: string) => {
     const targetUrl = url || getApiBase();
-    fetch(`${targetUrl}/api/health`, { method: 'GET' })
+    apiFetch(`${targetUrl}/api/health`, { method: 'GET' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && data.status === 'online') {
@@ -61,7 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
     setTestResult(null);
 
     try {
-      const res = await fetch(`${cleanUrl}/api/health`, { method: 'GET' });
+      const res = await apiFetch(`${cleanUrl}/api/health`, { method: 'GET' });
       if (!res.ok) {
         throw new Error(`Server membalas dengan status: ${res.status}`);
       }
@@ -78,7 +78,7 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
     } catch (err: any) {
       setTestResult({
         success: false,
-        msg: `Gagal terhubung ke ${cleanUrl}. Pastikan sel Colab Anda masih running dan URL Cloudflare benar.`,
+        msg: `Gagal terhubung ke ${cleanUrl}. Pastikan server backend / tunnel Ngrok aktif.`,
       });
     } finally {
       setIsTestingServer(false);
@@ -124,6 +124,7 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
                 ? 'bg-dark-card border-green-500/30 text-green-400 hover:bg-dark-hover'
                 : 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20'
             }`}
+            title="Klik untuk konfigurasi URL Server Backend jika diperlukan"
           >
             <Server className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">
@@ -169,7 +170,7 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
               <div>
                 <h3 className="text-lg font-bold text-white">Hubungkan Backend Server</h3>
                 <p className="text-xs text-gray-400">
-                  Gunakan URL Google Colab (Cloudflare / Ngrok) atau Localhost.
+                  Backend default otomatis terhubung ke domain statis Ngrok.
                 </p>
               </div>
             </div>
@@ -183,11 +184,11 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
                   type="url"
                   value={inputBackendUrl}
                   onChange={(e) => setInputBackendUrl(e.target.value)}
-                  placeholder="https://random-words.trycloudflare.com"
+                  placeholder="https://brunette-crimson-yen.ngrok-free.dev"
                   className="w-full px-3.5 py-2.5 bg-dark-input border border-dark-border rounded-xl text-sm text-white focus:outline-none focus:border-salmon font-mono"
                 />
                 <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
-                  💡 <strong>Tip Colab:</strong> Setiap kali Anda menjalankan Colab, Cloudflare memberikan URL baru yang berakhiran <code className="text-salmon">.trycloudflare.com</code>. Tempelkan URL tersebut di sini tanpa perlu redeploy Vercel!
+                  💡 <strong>Default Otomatis:</strong> Aplikasi default terhubung ke domain statis Ngrok Anda: <code className="text-salmon">{DEFAULT_API_URL}</code>.
                 </p>
               </div>
 
@@ -204,15 +205,26 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
               )}
 
               <div className="flex items-center justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInputBackendUrl('http://127.0.0.1:8000');
-                  }}
-                  className="text-xs text-gray-500 hover:text-gray-300 underline"
-                >
-                  Reset ke Localhost (8000)
-                </button>
+                <div className="flex space-x-3 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputBackendUrl(DEFAULT_API_URL);
+                    }}
+                    className="text-gray-400 hover:text-salmon underline"
+                  >
+                    Reset ke Ngrok Statis
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputBackendUrl('http://127.0.0.1:8000');
+                    }}
+                    className="text-gray-500 hover:text-gray-300 underline"
+                  >
+                    Localhost (8000)
+                  </button>
+                </div>
 
                 <div className="flex space-x-2">
                   <button
@@ -255,7 +267,7 @@ export const Navbar: React.FC<NavbarProps> = ({ apiKey, setApiKey, onBackendChan
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-300 mb-1">
-                  API Key (gemini-2.5-flash)
+                  API Key (gemini-3.8-flash)
                 </label>
                 <input
                   type="password"

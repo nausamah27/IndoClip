@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { X, Sparkles, RefreshCw, Palette, Check } from 'lucide-react';
 import { ClipResultItem, SubtitleColor, WordTiming } from '../types';
-import { getApiBase } from '../utils/api';
+import { apiFetch } from '../utils/api';
 
 interface SubtitleEditorModalProps {
   clip: ClipResultItem;
@@ -56,7 +56,7 @@ export const SubtitleEditorModal: React.FC<SubtitleEditorModalProps> = ({
     setIsReRendering(true);
     setErrorMsg('');
     try {
-      const res = await fetch(`${getApiBase()}/api/rerender-subtitle`, {
+      const res = await apiFetch('/api/rerender-subtitle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

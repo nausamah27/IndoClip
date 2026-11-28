@@ -35,13 +35,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS setup
+# CORS setup - Mengizinkan semua origin, method, dan header (termasuk ngrok-skip-browser-warning)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS + ["*"],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Mount outputs directory as static files for video streaming and preview
