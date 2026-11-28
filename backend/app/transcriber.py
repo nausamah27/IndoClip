@@ -13,6 +13,26 @@ try:
 except Exception:
     pass
 
+import os, sys, site
+# Auto-link nvidia cublas / cudnn libraries for CTranslate2 GPU execution
+try:
+    for p in site.getsitepackages():
+        for sub in ["cublas", "cudnn"]:
+            target = os.path.join(p, "nvidia", sub, "lib")
+            if os.path.isdir(target):
+                current_ld = os.environ.get("LD_LIBRARY_PATH", "")
+                if target not in current_ld:
+                    os.environ["LD_LIBRARY_PATH"] = f"{target}:{current_ld}"
+                import ctypes
+                for fname in os.listdir(target):
+                    if fname.startswith("libcublas.so") or fname.startswith("libcudnn.so"):
+                        try:
+                            ctypes.CDLL(os.path.join(target, fname))
+                        except Exception:
+                            pass
+except Exception:
+    pass
+
 from app.config import settings
 
 logger = logging.getLogger("indoclip.transcriber")
@@ -67,7 +87,17 @@ def transcribe_audio(
     cpu_threads = settings.WHISPER_CPU_THREADS  # 6 threads (sisa 2 thread untuk OS/Browser agar lancar)
     logger.info(f"Initializing faster-whisper with model='{default_model}', device='{device}', compute_type='{compute_type}', threads={cpu_threads}")
     
-    model = WhisperModel(default_model, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
+    try:
+        model = WhisperModel(default_model, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
+    except Exception as init_err:
+        if device == "cuda":
+            logger.warning(f"CUDA faster-whisper init failed ({init_err}), falling back to CPU (small, int8)...")
+            device = "cpu"
+            compute_type = "int8"
+            default_model = "small"
+            model = WhisperModel(default_model, device=device, compute_type=compute_type, cpu_threads=cpu_threads)
+        else:
+            raise init_err
     
     logger.info(f"Transcribing audio {audio_path.name} (language={language}, beam_size={settings.WHISPER_BEAM_SIZE}, vad_filter=True)...")
     segments_generator, info = model.transcribe(
