@@ -48,17 +48,24 @@ def ensure_ffmpeg() -> Tuple[str, str]:
 FFMPEG_CMD, FFPROBE_CMD = ensure_ffmpeg()
 
 def run_subprocess(cmd: list, check: bool = True, capture_output: bool = True) -> subprocess.CompletedProcess:
-    """Jalankan command subprocess dengan logging yang aman di Windows."""
+    """Jalankan command subprocess dengan logging yang aman dan pesan error detail."""
     logger.debug(f"Running subprocess: {' '.join(str(c) for c in cmd)}")
-    result = subprocess.run(
-        cmd,
-        check=check,
-        capture_output=capture_output,
-        text=True,
-        encoding="utf-8",
-        errors="replace"
-    )
-    return result
+    try:
+        result = subprocess.run(
+            cmd,
+            check=check,
+            capture_output=capture_output,
+            text=True,
+            encoding="utf-8",
+            errors="replace"
+        )
+        return result
+    except subprocess.CalledProcessError as e:
+        stderr_msg = e.stderr.strip() if e.stderr else ""
+        stdout_msg = e.stdout.strip() if e.stdout else ""
+        err_detail = stderr_msg or stdout_msg or f"Exit status {e.returncode}"
+        logger.error(f"Subprocess failed with code {e.returncode}: {err_detail}")
+        raise RuntimeError(f"FFmpeg/Subprocess error ({e.returncode}): {err_detail}") from e
 
 def get_video_duration(video_path: str) -> float:
     """Mengambil durasi video via ffprobe."""

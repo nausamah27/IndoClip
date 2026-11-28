@@ -52,8 +52,10 @@ def download_partial_video(
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([youtube_url])
+        if not raw_video_path.exists() or raw_video_path.stat().st_size == 0:
+            raise FileNotFoundError("File hasil download_ranges kosong.")
     except Exception as e:
-        logger.warning(f"Direct download_ranges failed: {e}. Trying CLI fallback...")
+        logger.warning(f"Direct download_ranges failed ({e}). Trying CLI fallback...")
         cmd = [
             "yt-dlp",
             "--download-sections", section_arg,
@@ -67,7 +69,7 @@ def download_partial_video(
         ]
         run_subprocess(cmd)
         
-    if not raw_video_path.exists():
+    if not raw_video_path.exists() or raw_video_path.stat().st_size == 0:
         raise FileNotFoundError(f"Gagal mengunduh bagian video untuk klip #{clip_index}")
         
     logger.info(f"Partial video downloaded: {raw_video_path.name} ({relative_end - relative_start:.1f}s effective)")

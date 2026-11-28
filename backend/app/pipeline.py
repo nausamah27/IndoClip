@@ -237,7 +237,8 @@ async def run_pipeline_orchestrator(job_id: str, request: ProcessRequest):
                 reframed_path,
                 request.layout_mode,
                 rel_start,
-                clip.end_time - clip.start_time
+                clip.end_time - clip.start_time,
+                clip.start_time
             )
             
             # --- Tahap 6: Editing Anti-Reused & Animated Subtitle ---

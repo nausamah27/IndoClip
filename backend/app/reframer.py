@@ -190,7 +190,8 @@ class VideoReframer:
         output_path: Path,
         category: str = "AUTO",
         relative_start: float = 0.0,
-        duration: float = 30.0
+        duration: float = 30.0,
+        clip_start_time: float = 0.0
     ) -> Path:
         """
         Memproses reframing video ke format 9:16 (1080x1920) sesuai mode.
@@ -215,15 +216,27 @@ class VideoReframer:
             
         cap = cv2.VideoCapture(str(raw_video_path))
         
-        # Potong posisi start ke relative_start jika ada
+        # Hitung frame padding
         start_frame = int(relative_start * fps)
         max_frames_to_read = int(duration * fps)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        
+        # Lewati frame padding secara berurutan agar aman dari bug seeking codec
+        if start_frame > 0:
+            for _ in range(start_frame):
+                ret, _ = cap.read()
+                if not ret:
+                    # Jika mencapai EOF lebih awal, reset ke awal video
+                    cap.release()
+                    cap = cv2.VideoCapture(str(raw_video_path))
+                    break
         
         # Temporary video output tanpa audio
-        temp_video_only = output_path.parent / f"{output_path.stem}_reframed_noaudio.mp4"
+        temp_video_only = output_path.parent / f"{output_path.stem}_noaudio.mp4"
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out_writer = cv2.VideoWriter(str(temp_video_only), fourcc, fps, (self.target_w, self.target_h))
+        if not out_writer.isOpened():
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            out_writer = cv2.VideoWriter(str(temp_video_only), fourcc, fps, (self.target_w, self.target_h))
         
         # Face Mesh & Detector diinisialisasi SEKALI di luar loop untuk kecepatan maksimal
         face_mesh = None
@@ -364,15 +377,29 @@ class VideoReframer:
                 try: face_detector_solo.close()
                 except Exception: pass
             
-        # Merge kembali audio dari file asli menggunakan FFmpeg
+        # Validasi bahwa video tidak kosong
+        if read_frames == 0 or not temp_video_only.exists() or temp_video_only.stat().st_size == 0:
+            raise RuntimeError(f"Gagal memproses frame: {temp_video_only.name} kosong (0 frames terbaca dari {raw_video_path.name}).")
+            
+        # Merge kembali audio menggunakan FFmpeg
         logger.info(f"Muxing audio into reframed video {output_path.name}...")
+        
+        # Cari trek audio master dari Tahap 1 jika ada
+        job_dir = output_path.parent
+        audio_candidates = [f for f in job_dir.glob("audio.*") if f.suffix.lower() in [".m4a", ".mp3", ".wav", ".aac", ".webm", ".opus"]]
+        master_audio = audio_candidates[0] if audio_candidates else None
+        
+        use_master_audio = (master_audio is not None and master_audio.exists() and clip_start_time >= 0)
+        audio_src = str(master_audio) if use_master_audio else str(raw_video_path)
+        audio_seek = f"{clip_start_time:.2f}" if use_master_audio else f"{relative_start:.2f}"
+        
         mux_cmd = [
             FFMPEG_CMD,
             "-y",
             "-i", str(temp_video_only),
-            "-ss", f"{relative_start:.2f}",
+            "-ss", audio_seek,
             "-t", f"{duration:.2f}",
-            "-i", str(raw_video_path),
+            "-i", audio_src,
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "192k",
@@ -381,7 +408,28 @@ class VideoReframer:
             "-shortest",
             str(output_path)
         ]
-        run_subprocess(mux_cmd)
+        
+        try:
+            run_subprocess(mux_cmd)
+        except Exception as e:
+            logger.warning(f"Muxing stream copy gagal ({e}). Fallback ke re-encode ultrafast...")
+            fallback_cmd = [
+                FFMPEG_CMD,
+                "-y",
+                "-i", str(temp_video_only),
+                "-ss", audio_seek,
+                "-t", f"{duration:.2f}",
+                "-i", audio_src,
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-map", "0:v:0",
+                "-map", "1:a:0?",
+                "-shortest",
+                str(output_path)
+            ]
+            run_subprocess(fallback_cmd)
         
         # Hapus temporary video
         if temp_video_only.exists():
